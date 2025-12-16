@@ -10,7 +10,7 @@ function pointerToSegments(pointer) {
 
 /**
  * Apply a value at a JSON-pointer-like path onto both:
- *  - workingDraft.blocksById.<blockId>...
+ *  - workingDraft._blocksByName.<blockName>...
  *  - workingDraft.blocks[blockIndex]...
  */
 // function applyValueAtPointer(draft, pointer, value) {
@@ -21,8 +21,8 @@ function pointerToSegments(pointer) {
 //   const fullPath = segments.join('.');
 //   set(draft, fullPath, value);
 
-//   // If path starts with /blocksById/<blockId>/..., mirror into blocks[]
-//   if (segments[0] === 'blocksById' && segments.length > 2 && Array.isArray(draft.blocks)) {
+//   // If path starts with /_blocksByName/<blockId>/..., mirror into blocks[]
+//   if (segments[0] === '_blocksByName' && segments.length > 2 && Array.isArray(draft.blocks)) {
 //     const blockId = segments[1];
 //     const restPath = segments.slice(2).join('.');
 
@@ -43,13 +43,13 @@ function applyValueAtPointer(draft, pointer, value) {
   const fullPath = segments.join('.');
   set(draft, fullPath, value);
 
-  // 2️⃣ Mirror /blocksById/<blockId>/... into blocks[]
-  if (segments[0] === 'blocksById' && segments.length > 2 && Array.isArray(draft.blocks)) {
-    const blockId = segments[1];
+  // 2️⃣ Mirror /_blocksByName/<blockName>/... into blocks[]
+  if (segments[0] === '_blocksByName' && segments.length > 2 && Array.isArray(draft.blocks)) {
+    const blockName = segments[1];
     const restPath = segments.slice(2).join('.');
 
     const idx = draft.blocks.findIndex(
-      (b) => b.blockId === blockId || b.nodeId === blockId
+      (b) => b.name === blockName
     );
 
     if (idx !== -1) {
@@ -57,48 +57,67 @@ function applyValueAtPointer(draft, pointer, value) {
     }
   }
 
-  // 3️⃣ SPECIAL CASE: relation conflicts under _relationsById
+  // 3️⃣ SPECIAL CASE: relation conflicts under _relationsByName
   //
-  // Path shape: /blocksById/<blockId>/_relationsById/<relationId>/...field...
+  // Path shape: /_blocksByName/<blockName>/_relationsByName/<relationName>[/...field...]
+  // - 4 segments: replacing entire relation object
+  // - 5+ segments: updating a field within the relation
   if (
-    segments[0] === 'blocksById' &&
-    segments[2] === '_relationsById' &&
-    segments.length >= 5
+    segments[0] === '_blocksByName' &&
+    segments[2] === '_relationsByName' &&
+    segments.length >= 4
   ) {
-    const blockId = segments[1];
-    const relationId = segments[3];
-    const fieldPathFromRelation = segments.slice(4).join('.'); // e.g. "expression"
+    const blockName = segments[1];
+    const relationName = segments[3];
+    const hasFieldPath = segments.length >= 5;
+    const fieldPathFromRelation = hasFieldPath ? segments.slice(4).join('.') : null;
 
-    // 3a) Update blocksById.<blockId>.relations[]
-    const blockById =
-      draft.blocksById && draft.blocksById[blockId]
-        ? draft.blocksById[blockId]
+    // Helper to update relation in a relations[] array
+    const updateRelationInArray = (relationsArray) => {
+      if (!Array.isArray(relationsArray)) return;
+      
+      // First, try to find by relationId or name (for object entries)
+      let relIdx = relationsArray.findIndex(
+        (r) => r && typeof r === 'object' && (r.relationId === relationName || r.name === relationName)
+      );
+      
+      // If not found, look for conflict marker strings
+      // The resolved value should have name or relationId matching relationName
+      if (relIdx === -1 && !hasFieldPath) {
+        // Look for any conflict marker string entry
+        relIdx = relationsArray.findIndex(
+          (r) => typeof r === 'string' && r.includes('@@CONFLICT{')
+        );
+      }
+      
+      if (relIdx !== -1) {
+        if (hasFieldPath) {
+          // Update a field within the relation
+          set(relationsArray[relIdx], fieldPathFromRelation, value);
+        } else {
+          // Replace the entire relation object
+          relationsArray[relIdx] = value;
+        }
+      }
+    };
+
+    // 3a) Update _blocksByName.<blockName>.relations[]
+    const blockByName =
+      draft._blocksByName && draft._blocksByName[blockName]
+        ? draft._blocksByName[blockName]
         : null;
 
-    if (blockById && Array.isArray(blockById.relations)) {
-      const rel = blockById.relations.find(
-        (r) => r.relationId === relationId
-      );
-      if (rel) {
-        set(rel, fieldPathFromRelation, value);
-      }
+    if (blockByName) {
+      updateRelationInArray(blockByName.relations);
     }
 
     // 3b) Update blocks[].relations[]
     if (Array.isArray(draft.blocks)) {
       const idx = draft.blocks.findIndex(
-        (b) => b.blockId === blockId || b.nodeId === blockId
+        (b) => b.name === blockName
       );
       if (idx !== -1) {
-        const block = draft.blocks[idx];
-        if (block && Array.isArray(block.relations)) {
-          const rel = block.relations.find(
-            (r) => r.relationId === relationId
-          );
-          if (rel) {
-            set(rel, fieldPathFromRelation, value);
-          }
-        }
+        updateRelationInArray(draft.blocks[idx].relations);
       }
     }
   }
@@ -143,7 +162,7 @@ export default function useConflictResolver(data) {
       [id]: { choice, value: resolvedValue },
     }));
 
-    // update workingDraft (both blocksById & blocks[])
+    // update workingDraft (both _blocksByName & blocks[])
     setWorkingDraft((prev) => {
       const draft = cloneDeep(prev);
       applyValueAtPointer(draft, conflict.path, resolvedValue);

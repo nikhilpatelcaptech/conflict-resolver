@@ -41,19 +41,16 @@ export default function ConflictResolver({ data }) {
     conflicts[0] ? conflicts[0].id : undefined
   );
 
-  const selectedConflict = conflicts.find((c) => c.id === selectedId);
-
+  const selectedConflict = conflicts.find(c => c.id === selectedId);
   const selectedInfo = useMemo(
     () => {
       if (!selectedConflict || !selectedConflict.path) return {};
       const segments = selectedConflict.path.split("/").filter(Boolean);
-
-      // Paths look like: /blocksById/<blockId>/config/executionStrategy
+      // Paths look like: /_blocksByName/<blockName>/config/executionStrategy
       let blockId = null;
-      if (segments[0] === "blocksById" && segments.length > 1) {
+      if (segments[0] === "_blocksByName" && segments.length > 1) {
         blockId = segments[1];
       }
-
       return {
         blockId,
         pathSegments: segments,
@@ -67,28 +64,24 @@ export default function ConflictResolver({ data }) {
     () => {
       if (!selectedInfo.blockId || !workingDraft) return null;
 
-      const { blocks, blocksById } = workingDraft;
+      const { blocks, _blocksByName } = workingDraft;
       const blockId = selectedInfo.blockId;
 
       // Prefer the full block from `blocks` array (more complete shape)
       if (Array.isArray(blocks)) {
-        const fromBlocks =
-          blocks.find(
-            (b) => b.blockId === blockId || b.nodeId === blockId
-          ) || null;
+        const fromBlocks = blocks.find(b => b.name === blockId) || null;
         if (fromBlocks) return fromBlocks;
       }
 
-      // Fallback to `blocksById` if present
-      if (blocksById && blocksById[blockId]) {
-        return blocksById[blockId];
+      // Fallback to `_blocksByName` if present
+      if (_blocksByName && _blocksByName[blockId]) {
+        return _blocksByName[blockId];
       }
 
       return null;
     },
     [workingDraft, selectedInfo.blockId]
   );
-
   // ───────────────── layout styles ─────────────────
 
   const containerStyle = {
@@ -156,7 +149,7 @@ export default function ConflictResolver({ data }) {
     fontSize: 11
   };
 
-  const applyButtonStyle = (enabled) => ({
+  const applyButtonStyle = enabled => ({
     padding: "6px 12px",
     borderRadius: 4,
     border: "none",
@@ -174,7 +167,7 @@ export default function ConflictResolver({ data }) {
     alert("Merged object logged to console");
   };
 
-  const resolvedCount = conflicts.filter((c) => isResolved(c.id)).length;
+  const resolvedCount = conflicts.filter(c => isResolved(c.id)).length;
 
   const renderDetail = () => {
     if (!selectedConflict) {
@@ -238,7 +231,7 @@ export default function ConflictResolver({ data }) {
         </div>
 
         <div style={listStyle}>
-          {conflicts.map((conf) => {
+          {conflicts.map(conf => {
             const label = conf.path.split("/").filter(Boolean).join(".");
             const resolved = isResolved(conf.id);
             const isActive = conf.id === selectedId;
@@ -347,7 +340,7 @@ export default function ConflictResolver({ data }) {
                 Block context (from working object)
               </div>
 
-              {selectedConflict && (
+              {selectedConflict &&
                 <div
                   style={{
                     fontSize: 11,
@@ -359,54 +352,52 @@ export default function ConflictResolver({ data }) {
                   <span style={{ fontFamily: "Menlo, monospace" }}>
                     {selectedInfo.pathString || selectedConflict.path}
                   </span>
-                </div>
-              )}
+                </div>}
 
-              {selectedBlockContext ? (
-                <pre
-                  style={{
-                    flex: 1,
-                    margin: 0,
-                    padding: 8,
-                    borderRadius: 4,
-                    border: "1px solid #111827",
-                    background: "#020617",
-                    color: "#e5e7eb",
-                    fontFamily: "Menlo, monospace",
-                    fontSize: 11,
-                    overflow: "auto",
-                    whiteSpace: "pre"
-                  }}
-                  dangerouslySetInnerHTML={{
-                    __html: highlightConflictMarkers(
-                      JSON.stringify(
-                        selectedBlockContext,
-                        (key, value) => {
-                          if (
-                            key === "_relationsById" ||
-                            key === "_blocksById"
-                          ) {
-                            return undefined;
-                          }
-                          return value;
-                        },
-                        2
+              {selectedBlockContext
+                ? <pre
+                    style={{
+                      flex: 1,
+                      margin: 0,
+                      padding: 8,
+                      borderRadius: 4,
+                      border: "1px solid #111827",
+                      background: "#020617",
+                      color: "#e5e7eb",
+                      fontFamily: "Menlo, monospace",
+                      fontSize: 11,
+                      overflow: "auto",
+                      whiteSpace: "pre"
+                    }}
+                    dangerouslySetInnerHTML={{
+                      __html: highlightConflictMarkers(
+                        JSON.stringify(
+                          selectedBlockContext,
+                          (key, value) => {
+                            if (
+                              key === "_relationsByName" ||
+                              key === "_blocksByName"
+                            ) {
+                              return undefined;
+                            }
+                            return value;
+                          },
+                          2
+                        )
                       )
-                    )
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#6b7280",
-                    marginTop: 8
-                  }}
-                >
-                  Select a conflict whose path starts with{" "}
-                  <code>blocksById.&lt;blockId&gt;</code> to see its block here.
-                </div>
-              )}
+                    }}
+                  />
+                : <div
+                    style={{
+                      fontSize: 11,
+                      color: "#6b7280",
+                      marginTop: 8
+                    }}
+                  >
+                    Select a conflict whose path starts with{" "}
+                    <code>_blocksByName.&lt;blockId&gt;</code> to see its block
+                    here.
+                  </div>}
             </div>
           </div>
         </div>
